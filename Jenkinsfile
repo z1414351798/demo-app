@@ -8,13 +8,15 @@ pipeline {
 
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                git credentialsId: 'github-creds', url: 'https://github.com/z1414351798/demo-app.git'
-            }
-        }
+        // ❗ REMOVE THIS (Jenkins already does checkout automatically)
+        // stage('Checkout Code') { ... }
 
         stage('Build JAR') {
+            agent {
+                docker {
+                    image 'maven:3.9.9-eclipse-temurin-17'
+                }
+            }
             steps {
                 sh 'mvn clean package -DskipTests'
             }
@@ -46,9 +48,7 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh '''
-                kubectl set image deployment/demo-app demo-app=$DOCKER_IMAGE:$TAG
-                '''
+                sh 'kubectl set image deployment/demo-app demo-app=$DOCKER_IMAGE:$TAG'
             }
         }
 
