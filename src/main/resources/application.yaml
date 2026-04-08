@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: container.demo
+server:
+  port: 8088
