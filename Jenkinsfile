@@ -8,59 +8,82 @@ pipeline {
     environment {
         DOCKER_IMAGE = "hoyi9749/andy_zeng"
         TAG = "${BUILD_NUMBER}"
+        DOCKER_CONFIG = "/kaniko/.docker"
     }
 
     stages {
 
-        // ❗ REMOVE THIS (Jenkins already does checkout automatically)
-        // stage('Checkout Code') { ... }
+        stage('Checkout Code') {
+            steps {
+                git 'https://github.com/YOUR_USERNAME/YOUR_REPO.git'
+            }
+        }
 
         stage('Build JAR') {
-            agent {
-                docker {
-                    image 'maven:3.9.9-eclipse-temurin-17'
-                    reuseNode true   // ⭐ THIS IS THE KEY
-                }
-            }
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t $DOCKER_IMAGE:$TAG .'
-            }
-        }
-
-        stage('Login DockerHub') {
+        stage('Build & Push Image with Kaniko') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    sh '''
+                    mkdir -p /kaniko/.docker
+                    AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
+
+                    cat > /kaniko/.docker/config.json <<EOF
+                    {
+                      "auths": {
+                        "https://index.docker.io/v1/": {
+                          "auth": "$AUTH"
+                        }
+                      }
+                    }
+                    EOF
+
+                    kaniko \
+                      --context $WORKSPACE \
+                      --dockerfile $WORKSPACE/Dockerfile \
+                      --destination $DOCKER_IMAGE:$TAG \
+                      --destination $DOCKER_IMAGE:latest \
+                      --cache=true
+                    '''
                 }
             }
         }
 
-        stage('Push Image') {
+        stage('Deploy with Helm') {
             steps {
-                sh 'docker push $DOCKER_IMAGE:$TAG'
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh 'kubectl set image deployment/demo-app demo-app=$DOCKER_IMAGE:$TAG'
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                    helm upgrade --install demo-app ./helm/demo-app \
+                      --set image.repository=$DOCKER_IMAGE \
+                      --set image.tag=$TAG
+                    '''
+                }
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh 'kubectl rollout status deployment/demo-app'
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh 'kubectl rollout status deployment/demo-app'
+                }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Deployment successful: ${DOCKER_IMAGE}:${TAG}"
+        }
+        failure {
+            echo "❌ Deployment failed!"
         }
     }
 }
