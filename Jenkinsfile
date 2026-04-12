@@ -57,6 +57,19 @@ pipeline {
             }
         }
 
+        stage('Verify Kubernetes Connection') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                    echo "Using kubeconfig:"
+                    kubectl config get-contexts
+                    kubectl config current-context
+                    kubectl get nodes
+                    '''
+                }
+            }
+        }
+
         stage('Deploy with Helm') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
