@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: hoyi9749/andy_zeng
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  type: NodePort
+  port: 8088
+  targetPort: 8088
+  nodePort: 30088
+
+containerPort: 8088
+
+nameOverride: ""
+fullnameOverride: ""
+

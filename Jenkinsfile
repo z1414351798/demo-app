@@ -3,12 +3,14 @@ pipeline {
 
     options {
         disableConcurrentBuilds()
+        timestamps()
     }
 
     environment {
         DOCKER_IMAGE = "hoyi9749/andy_zeng"
         TAG = "${BUILD_NUMBER}"
         DOCKER_CONFIG = "/kaniko/.docker"
+        K8S_NAMESPACE = "default"
     }
 
     stages {
@@ -61,7 +63,7 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                    echo "Using kubeconfig:"
+                    export KUBECONFIG=$KUBECONFIG
                     kubectl config get-contexts
                     kubectl config current-context
                     kubectl get nodes
@@ -70,11 +72,20 @@ pipeline {
             }
         }
 
+        stage('Lint Helm Chart') {
+            steps {
+                sh 'helm lint ./helm/demo-app'
+            }
+        }
+
         stage('Deploy with Helm') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
+                    export KUBECONFIG=$KUBECONFIG
                     helm upgrade --install demo-app ./helm/demo-app \
+                      --namespace $K8S_NAMESPACE \
+                      --create-namespace \
                       --set image.repository=$DOCKER_IMAGE \
                       --set image.tag=$TAG
                     '''
@@ -85,7 +96,10 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh 'kubectl rollout status deployment/demo-app'
+                    sh '''
+                    export KUBECONFIG=$KUBECONFIG
+                    kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE
+                    '''
                 }
             }
         }
