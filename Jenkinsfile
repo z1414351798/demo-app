@@ -3,6 +3,7 @@ pipeline {
 
     options {
         disableConcurrentBuilds()
+        timestamps()
     }
 
     environment {
@@ -41,28 +42,31 @@ pipeline {
                     kaniko version
 
                     echo "🔐 Configuring Docker Hub authentication..."
-                    mkdir -p /kaniko/.docker
+                    mkdir -p $DOCKER_CONFIG
+
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
-                    cat > /kaniko/.docker/config.json <<EOF
-        {
-          "auths": {
-            "https://index.docker.io/v1/": {
-              "auth": "$AUTH"
-            }
-          }
-        }
-        EOF
+                    cat > $DOCKER_CONFIG/config.json <<EOF
+{
+  "auths": {
+    "https://index.docker.io/v1/": {
+      "auth": "$AUTH"
+    }
+  }
+}
+EOF
+
+                    echo "📄 Docker config:"
+                    cat $DOCKER_CONFIG/config.json | sed 's/"auth":.*/"auth": "***"/'
 
                     echo "🚀 Building and pushing image to Docker Hub..."
-
-                      kaniko \
+                    kaniko \
                       --context "$WORKSPACE" \
                       --dockerfile "$WORKSPACE/Dockerfile" \
-                      --destination "$DOCKER_IMAGE:$TAG" \
-                      --destination "$DOCKER_IMAGE:latest" \
+                      --destination "docker.io/$DOCKER_IMAGE:$TAG" \
+                      --destination "docker.io/$DOCKER_IMAGE:latest" \
                       --cache=true \
-                      --verbosity=debug
+                      --verbosity=info
                     '''
                 }
             }
@@ -91,7 +95,9 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
+                    set -eux
                     export KUBECONFIG=$KUBECONFIG
+
                     helm upgrade --install demo-app ./helm/demo-app \
                       --namespace $K8S_NAMESPACE \
                       --create-namespace \
@@ -107,7 +113,7 @@ pipeline {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
                     export KUBECONFIG=$KUBECONFIG
-                    kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE
+                    kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE --timeout=180s
                     '''
                 }
             }
