@@ -40,10 +40,6 @@ pipeline {
                     which kaniko
                     kaniko version
 
-                    echo "📂 Checking workspace..."
-                    ls -lah $WORKSPACE
-                    ls -lah $WORKSPACE/Dockerfile
-
                     echo "🔐 Configuring Docker Hub authentication..."
                     mkdir -p /kaniko/.docker
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
@@ -60,7 +56,7 @@ pipeline {
 
                     echo "🚀 Building and pushing image to Docker Hub..."
 
-                    /usr/local/bin/kaniko \
+                      kaniko \
                       --context "$WORKSPACE" \
                       --dockerfile "$WORKSPACE/Dockerfile" \
                       --destination "$DOCKER_IMAGE:$TAG" \
