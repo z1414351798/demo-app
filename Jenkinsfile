@@ -1,116 +1,81 @@
 pipeline {
-    agent any
-
-    options {
-        disableConcurrentBuilds()
-        timestamps()
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: maven
+    image: maven:3.9-eclipse-temurin-17
+    command: ["tail", "-f", "/dev/null"]
+    tty: true
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["sleep", "infinity"]
+    tty: true
+    volumeMounts:
+      - name: docker-config
+        mountPath: /kaniko/.docker
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: regcred
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+'''
+        }
     }
 
     environment {
         DOCKER_IMAGE = "hoyi9749/andy_zeng"
         TAG = "${BUILD_NUMBER}"
-        DOCKER_CONFIG = "/kaniko/.docker"
         K8S_NAMESPACE = "default"
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Checkout & Build') {
             steps {
-                git 'https://github.com/z1414351798/demo-app.git'
-            }
-        }
-
-        stage('Build JAR') {
-            steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('Build & Push Image with Kaniko') {
-                    steps {
-                        withCredentials([usernamePassword(
-                            credentialsId: 'dockerhub-creds',
-                            usernameVariable: 'DOCKER_USER',
-                            passwordVariable: 'DOCKER_PASS'
-                        )]) {
-                            sh '''
-                            set -eux
-                            export KANIKO_HOME="$WORKSPACE/kaniko_home"
-                            mkdir -p "$KANIKO_HOME/.docker"
-                            export DOCKER_CONFIG="$KANIKO_HOME/.docker"
-
-                            AUTH=$(echo -n "${DOCKER_USER}:${DOCKER_PASS}" | base64 | tr -d '\\n')
-                            echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"auth\\":\\"$AUTH\\"}}}" > "$DOCKER_CONFIG/config.json"
-
-                            sudo /usr/local/bin/kaniko \
-                              --force \
-                              --cleanup \
-                              --context "$WORKSPACE" \
-                              --dockerfile "$WORKSPACE/Dockerfile" \
-                              --destination "docker.io/hoyi9749/andy_zeng:$TAG" \
-                              --destination "docker.io/hoyi9749/andy_zeng:latest" \
-                              --kaniko-dir "$KANIKO_HOME" \
-                              --cache=true
-                            '''
-                        }
-                    }
+                container('maven') {
+                    checkout scm
+                    sh 'mvn clean package -DskipTests'
                 }
+            }
+        }
 
-        stage('Verify Kubernetes Connection') {
+        stage('Build & Push with Kaniko') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                container('kaniko') {
+                    // Kaniko shares the workspace with the maven container
                     sh '''
-                    export KUBECONFIG=$KUBECONFIG
-                    kubectl config get-contexts
-                    kubectl config current-context
-                    kubectl get nodes
+                    /kaniko/executor --context `pwd` \
+                      --dockerfile `pwd`/Dockerfile \
+                      --destination ${DOCKER_IMAGE}:${TAG} \
+                      --destination ${DOCKER_IMAGE}:latest
                     '''
                 }
             }
         }
 
-        stage('Lint Helm Chart') {
+        stage('Deploy to K8s') {
             steps {
-                sh 'helm lint ./helm/demo-app'
-            }
-        }
-
-        stage('Deploy with Helm') {
-            steps {
+                // We use the maven container here because it usually has 'sh'
+                // but you must ensure helm/kubectl are installed on your Jenkins agent
+                // OR add a third container to the Pod for helm
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                    set -eux
                     export KUBECONFIG=$KUBECONFIG
-
                     helm upgrade --install demo-app ./helm/demo-app \
                       --namespace $K8S_NAMESPACE \
                       --create-namespace \
                       --set image.repository=$DOCKER_IMAGE \
                       --set image.tag=$TAG
-                    '''
-                }
-            }
-        }
 
-        stage('Verify Deployment') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                    export KUBECONFIG=$KUBECONFIG
                     kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE --timeout=180s
                     '''
                 }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Deployment successful: ${DOCKER_IMAGE}:${TAG}"
-        }
-        failure {
-            echo "❌ Deployment failed!"
         }
     }
 }
