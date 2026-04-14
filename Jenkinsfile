@@ -28,48 +28,39 @@ pipeline {
         }
 
         stage('Build & Push Image with Kaniko') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                    set -eux
+                    steps {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'dockerhub-creds',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh '''
+                            set -eux
 
-                    # 1. Create a local 'kaniko' home inside the workspace
-                    # This avoids using the root /kaniko folder which requires root permissions
-                    mkdir -p "$WORKSPACE/kaniko_home/.docker"
-                    export DOCKER_CONFIG="$WORKSPACE/kaniko_home/.docker"
+                            # 1. Setup local config
+                            export KANIKO_HOME="$WORKSPACE/kaniko_home"
+                            mkdir -p "$KANIKO_HOME/.docker"
+                            export DOCKER_CONFIG="$KANIKO_HOME/.docker"
 
-                    # 2. Configure Authentication
-                    AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
-                    cat > "$DOCKER_CONFIG/config.json" <<EOF
-        {
-          "auths": {
-            "https://index.docker.io/v1/": {
-              "auth": "$AUTH"
-            }
-          }
-        }
-        EOF
+                            # 2. Create Docker Authentication
+                            AUTH=$(echo -n "${DOCKER_USER}:${DOCKER_PASS}" | base64 | tr -d '\\n')
+                            echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"auth\\":\\"$AUTH\\"}}}" > "$DOCKER_CONFIG/config.json"
 
-                    # 3. Execute Kaniko
-                    # We use --kaniko-dir to tell Kaniko to use our workspace folder
-                    # instead of the system /kaniko folder.
-                    /usr/local/bin/kaniko \
-                      --force \
-                      --kaniko-dir "$WORKSPACE/kaniko_home" \
-                      --context "$WORKSPACE" \
-                      --dockerfile "$WORKSPACE/Dockerfile" \
-                      --destination "docker.io/$DOCKER_IMAGE:$TAG" \
-                      --destination "docker.io/$DOCKER_IMAGE:latest" \
-                      --cache=true \
-                      --verbosity=info
-                    '''
+                            # 3. RUN KANIKO WITH SUDO
+                            # You MUST use sudo here because Kaniko needs to unpack the
+                            # base image into the container's root filesystem.
+                            sudo /usr/local/bin/kaniko \
+                              --force \
+                              --context "$WORKSPACE" \
+                              --dockerfile "$WORKSPACE/Dockerfile" \
+                              --destination "docker.io/$DOCKER_IMAGE:$TAG" \
+                              --destination "docker.io/$DOCKER_IMAGE:latest" \
+                              --kaniko-dir "$KANIKO_HOME" \
+                              --cache=true
+                            '''
+                        }
+                    }
                 }
-            }
-        }
 
         stage('Verify Kubernetes Connection') {
             steps {
