@@ -34,6 +34,11 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
+                    set -e
+                    echo "🔍 Verifying Kaniko installation..."
+                    ls -l /kaniko || true
+                    ls -l /usr/local/bin || true
+
                     mkdir -p /kaniko/.docker
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
@@ -47,12 +52,14 @@ pipeline {
                     }
                     EOF
 
-                    kaniko \
+                    echo "🚀 Building and pushing image with Kaniko..."
+                    /kaniko/executor \
                       --context $WORKSPACE \
                       --dockerfile $WORKSPACE/Dockerfile \
                       --destination $DOCKER_IMAGE:$TAG \
                       --destination $DOCKER_IMAGE:latest \
-                      --cache=true
+                      --cache=true \
+                      --verbosity=info
                     '''
                 }
             }
