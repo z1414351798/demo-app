@@ -28,49 +28,51 @@ pipeline {
         }
 
         stage('Build & Push Image with Kaniko') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                    set -eux
+                    steps {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'dockerhub-creds',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh '''
+                            set -eux
 
-                    echo "🔍 Verifying Kaniko installation..."
-                    which kaniko
-                    kaniko version
+                            # 1. Define a local directory for Kaniko state and Docker config
+                            # Using the workspace prevents permission issues on the host root
+                            export KANIKO_LOCAL_DIR="$WORKSPACE/kaniko_home"
+                            export DOCKER_CONFIG="$KANIKO_LOCAL_DIR/.docker"
 
-                    echo "🔐 Configuring Docker Hub authentication..."
-                    mkdir -p $DOCKER_CONFIG
+                            mkdir -p "$DOCKER_CONFIG"
 
-                    AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
+                            echo "🔐 Configuring Docker Hub authentication..."
+                            AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
-                    cat > $DOCKER_CONFIG/config.json <<EOF
-{
-  "auths": {
-    "https://index.docker.io/v1/": {
-      "auth": "$AUTH"
-    }
-  }
-}
-EOF
-
-                    echo "📄 Docker config:"
-                    cat $DOCKER_CONFIG/config.json | sed 's/"auth":.*/"auth": "***"/'
-
-                    echo "🚀 Building and pushing image to Docker Hub..."
-                    kaniko \
-                      --context "$WORKSPACE" \
-                      --dockerfile "$WORKSPACE/Dockerfile" \
-                      --destination "docker.io/$DOCKER_IMAGE:$TAG" \
-                      --destination "docker.io/$DOCKER_IMAGE:latest" \
-                      --cache=true \
-                      --verbosity=info
-                    '''
-                }
+                            cat > "$DOCKER_CONFIG/config.json" <<EOF
+        {
+          "auths": {
+            "https://index.docker.io/v1/": {
+              "auth": "$AUTH"
             }
+          }
         }
+        EOF
+
+                            echo "🚀 Building and pushing image..."
+                            # --kaniko-dir: Redirects Kaniko's internal state files
+                            # --force: Necessary when running Kaniko outside a container
+                            kaniko \
+                              --force \
+                              --kaniko-dir "$KANIKO_LOCAL_DIR" \
+                              --context "$WORKSPACE" \
+                              --dockerfile "$WORKSPACE/Dockerfile" \
+                              --destination "docker.io/$DOCKER_IMAGE:$TAG" \
+                              --destination "docker.io/$DOCKER_IMAGE:latest" \
+                              --cache=true \
+                              --verbosity=info
+                            '''
+                        }
+                    }
+                }
 
         stage('Verify Kubernetes Connection') {
             steps {
