@@ -36,25 +36,20 @@ pipeline {
                         )]) {
                             sh '''
                             set -eux
-
-                            # 1. Setup local config
                             export KANIKO_HOME="$WORKSPACE/kaniko_home"
                             mkdir -p "$KANIKO_HOME/.docker"
                             export DOCKER_CONFIG="$KANIKO_HOME/.docker"
 
-                            # 2. Create Docker Authentication
                             AUTH=$(echo -n "${DOCKER_USER}:${DOCKER_PASS}" | base64 | tr -d '\\n')
                             echo "{\\"auths\\":{\\"https://index.docker.io/v1/\\":{\\"auth\\":\\"$AUTH\\"}}}" > "$DOCKER_CONFIG/config.json"
 
-                            # 3. RUN KANIKO WITH SUDO
-                            # You MUST use sudo here because Kaniko needs to unpack the
-                            # base image into the container's root filesystem.
                             sudo /usr/local/bin/kaniko \
                               --force \
+                              --cleanup \
                               --context "$WORKSPACE" \
                               --dockerfile "$WORKSPACE/Dockerfile" \
-                              --destination "docker.io/$DOCKER_IMAGE:$TAG" \
-                              --destination "docker.io/$DOCKER_IMAGE:latest" \
+                              --destination "docker.io/hoyi9749/andy_zeng:$TAG" \
+                              --destination "docker.io/hoyi9749/andy_zeng:latest" \
                               --kaniko-dir "$KANIKO_HOME" \
                               --cache=true
                             '''
