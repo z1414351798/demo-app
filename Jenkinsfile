@@ -37,23 +37,30 @@ pipeline {
                     sh '''
                     set -eux
 
-                    mkdir -p /kaniko/.docker
-                    chmod -R 777 /kaniko || true
+                    echo "🔍 Verifying Kaniko installation..."
+                    which kaniko
+                    kaniko version
+
+                    echo "🔐 Configuring Docker Hub authentication..."
+                    mkdir -p $DOCKER_CONFIG
 
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
-                    cat > /kaniko/.docker/config.json <<EOF
-        {
-          "auths": {
-            "https://index.docker.io/v1/": {
-              "auth": "$AUTH"
-            }
-          }
-        }
-        EOF
+                    cat > $DOCKER_CONFIG/config.json <<EOF
+{
+  "auths": {
+    "https://index.docker.io/v1/": {
+      "auth": "$AUTH"
+    }
+  }
+}
+EOF
 
-                    /usr/local/bin/kaniko \
-                      --force \
+                    echo "📄 Docker config:"
+                    cat $DOCKER_CONFIG/config.json | sed 's/"auth":.*/"auth": "***"/'
+
+                    echo "🚀 Building and pushing image to Docker Hub..."
+                    kaniko \
                       --context "$WORKSPACE" \
                       --dockerfile "$WORKSPACE/Dockerfile" \
                       --destination "docker.io/$DOCKER_IMAGE:$TAG" \
