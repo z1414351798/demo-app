@@ -34,37 +34,39 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                    set -e
+                    set -eux
+
                     echo "🔍 Verifying Kaniko installation..."
+                    which kaniko
+                    kaniko version
 
-                    # Verify Kaniko binary
-                    which kaniko || true
-                    ls -l /kaniko || true
-                    ls -l /usr/local/bin || true
+                    echo "📂 Checking workspace..."
+                    ls -lah $WORKSPACE
+                    ls -lah $WORKSPACE/Dockerfile
 
-                    # Configure Docker authentication
+                    echo "🔐 Configuring Docker Hub authentication..."
                     mkdir -p /kaniko/.docker
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
                     cat > /kaniko/.docker/config.json <<EOF
-                    {
-                      "auths": {
-                        "https://index.docker.io/v1/": {
-                          "auth": "$AUTH"
-                        }
-                      }
-                    }
-                    EOF
+        {
+          "auths": {
+            "https://index.docker.io/v1/": {
+              "auth": "$AUTH"
+            }
+          }
+        }
+        EOF
 
                     echo "🚀 Building and pushing image to Docker Hub..."
 
-                    kaniko \
-                      --context $WORKSPACE \
-                      --dockerfile $WORKSPACE/Dockerfile \
-                      --destination $DOCKER_IMAGE:$TAG \
-                      --destination $DOCKER_IMAGE:latest \
+                    /usr/local/bin/kaniko \
+                      --context "$WORKSPACE" \
+                      --dockerfile "$WORKSPACE/Dockerfile" \
+                      --destination "$DOCKER_IMAGE:$TAG" \
+                      --destination "$DOCKER_IMAGE:latest" \
                       --cache=true \
-                      --verbosity=info
+                      --verbosity=debug
                     '''
                 }
             }
