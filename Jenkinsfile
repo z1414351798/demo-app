@@ -58,7 +58,7 @@ pipeline {
 
                     echo "🚀 Building and pushing image to Docker Hub..."
 
-                    /usr/local/bin/kaniko \
+                    kaniko \
                       --context $WORKSPACE \
                       --dockerfile $WORKSPACE/Dockerfile \
                       --destination $DOCKER_IMAGE:$TAG \
