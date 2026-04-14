@@ -36,9 +36,13 @@ pipeline {
                     sh '''
                     set -e
                     echo "🔍 Verifying Kaniko installation..."
+
+                    # Verify Kaniko binary
+                    which kaniko || true
                     ls -l /kaniko || true
                     ls -l /usr/local/bin || true
 
+                    # Configure Docker authentication
                     mkdir -p /kaniko/.docker
                     AUTH=$(echo -n "$DOCKER_USER:$DOCKER_PASS" | base64 | tr -d '\\n')
 
@@ -52,8 +56,9 @@ pipeline {
                     }
                     EOF
 
-                    echo "🚀 Building and pushing image with Kaniko..."
-                    /kaniko/executor \
+                    echo "🚀 Building and pushing image to Docker Hub..."
+
+                    /usr/local/bin/kaniko \
                       --context $WORKSPACE \
                       --dockerfile $WORKSPACE/Dockerfile \
                       --destination $DOCKER_IMAGE:$TAG \
