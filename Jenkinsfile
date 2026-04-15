@@ -1,8 +1,7 @@
 pipeline {
     agent {
-            kubernetes {
-                // No need to specify 'cloud' if it's the only one
-                yaml '''
+        kubernetes {
+            yaml '''
     apiVersion: v1
     kind: Pod
     spec:
@@ -12,22 +11,27 @@ pipeline {
         imagePullPolicy: IfNotPresent
         command: ["tail", "-f", "/dev/null"]
         tty: true
+        volumeMounts:
+          - name: maven-cache
+            mountPath: /root/.m2  # This maps to the container's maven home
       - name: deploy-tools
-        image: dtzar/helm-kubectl:latest  # This image has both helm and kubectl
+        image: dtzar/helm-kubectl:latest
         imagePullPolicy: IfNotPresent
         command: ["tail", "-f", "/dev/null"]
         tty: true
       - name: kaniko
-        # 'debug' is required to keep the container alive
         image: gcr.io/kaniko-project/executor:debug
         imagePullPolicy: IfNotPresent
-        # We use /busybox/sh because kaniko doesn't have /bin/sh
         command: ["/busybox/sh", "-c", "tail -f /dev/null"]
         tty: true
         volumeMounts:
           - name: docker-config
             mountPath: /kaniko/.docker
       volumes:
+        - name: maven-cache
+          hostPath:
+            # IMPORTANT: Replace YOUR_NAME with your actual Mac username
+            path: /Users/andrea/.m2
         - name: docker-config
           secret:
             secretName: regcred
@@ -35,8 +39,8 @@ pipeline {
               - key: .dockerconfigjson
                 path: config.json
     '''
-            }
         }
+    }
 
     environment {
         DOCKER_IMAGE = "hoyi9749/andy_zeng"
@@ -49,7 +53,8 @@ pipeline {
             steps {
                 container('maven') {
                     checkout scm
-                    sh 'mvn clean package -DskipTests'
+                    // Batch mode makes the logs much cleaner
+                    sh 'mvn clean package -DskipTests --batch-mode'
                 }
             }
         }
@@ -57,7 +62,6 @@ pipeline {
         stage('Build & Push with Kaniko') {
             steps {
                 container('kaniko') {
-                    // Kaniko shares the workspace with the maven container
                     sh '''
                     /kaniko/executor --context `pwd` \
                       --dockerfile `pwd`/Dockerfile \
@@ -71,7 +75,7 @@ pipeline {
         stage('Deploy to K8s') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    container('deploy-tools') { // Run inside the container that has helm
+                    container('deploy-tools') {
                         sh '''
                         export KUBECONFIG=$KUBECONFIG
                         helm upgrade --install demo-app ./helm/demo-app \
