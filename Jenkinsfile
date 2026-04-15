@@ -3,29 +3,31 @@ pipeline {
         kubernetes {
             cloud 'kubernetes'
             yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: maven
-    image: maven:3.9-eclipse-temurin-17
-    command: ["tail", "-f", "/dev/null"]
-    tty: true
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:debug
-    command: ["sleep", "infinity"]
-    tty: true
-    volumeMounts:
-      - name: docker-config
-        mountPath: /kaniko/.docker
-  volumes:
-    - name: docker-config
-      secret:
-        secretName: regcred
-        items:
-          - key: .dockerconfigjson
-            path: config.json
-'''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              containers:
+              - name: maven
+                image: maven:3.9.9-eclipse-temurin-17
+                imagePullPolicy: IfNotPresent  # <--- Add this
+                command: ["tail", "-f", "/dev/null"]
+                tty: true
+              - name: kaniko
+                image: gcr.io/kaniko-project/executor:latest
+                imagePullPolicy: IfNotPresent  # <--- Add this
+                command: ["sleep", "infinity"]
+                tty: true
+                volumeMounts:
+                  - name: docker-config
+                    mountPath: /kaniko/.docker
+              volumes:
+                - name: docker-config
+                  secret:
+                    secretName: regcred
+                    items:
+                      - key: .dockerconfigjson
+                        path: config.json
+            '''
         }
     }
 
