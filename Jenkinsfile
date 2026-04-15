@@ -1,35 +1,37 @@
 pipeline {
     agent {
-        kubernetes {
-            cloud 'kubernetes'
-            yaml '''
-            apiVersion: v1
-            kind: Pod
-            spec:
-              containers:
-              - name: maven
-                image: maven:3.9.9-eclipse-temurin-17
-                imagePullPolicy: IfNotPresent  # <--- Add this
-                command: ["tail", "-f", "/dev/null"]
-                tty: true
-              - name: kaniko
-                image: gcr.io/kaniko-project/executor:latest
-                imagePullPolicy: IfNotPresent  # <--- Add this
-                command: ["sleep", "infinity"]
-                tty: true
-                volumeMounts:
-                  - name: docker-config
-                    mountPath: /kaniko/.docker
-              volumes:
-                - name: docker-config
-                  secret:
-                    secretName: regcred
-                    items:
-                      - key: .dockerconfigjson
-                        path: config.json
-            '''
+            kubernetes {
+                // No need to specify 'cloud' if it's the only one
+                yaml '''
+    apiVersion: v1
+    kind: Pod
+    spec:
+      containers:
+      - name: maven
+        image: maven:3.9.9-eclipse-temurin-17
+        imagePullPolicy: IfNotPresent
+        command: ["tail", "-f", "/dev/null"]
+        tty: true
+      - name: kaniko
+        # 'debug' is required to keep the container alive
+        image: gcr.io/kaniko-project/executor:debug
+        imagePullPolicy: IfNotPresent
+        # We use /busybox/sh because kaniko doesn't have /bin/sh
+        command: ["/busybox/sh", "-c", "tail -f /dev/null"]
+        tty: true
+        volumeMounts:
+          - name: docker-config
+            mountPath: /kaniko/.docker
+      volumes:
+        - name: docker-config
+          secret:
+            secretName: regcred
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+    '''
+            }
         }
-    }
 
     environment {
         DOCKER_IMAGE = "hoyi9749/andy_zeng"
