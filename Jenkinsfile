@@ -12,6 +12,11 @@ pipeline {
         imagePullPolicy: IfNotPresent
         command: ["tail", "-f", "/dev/null"]
         tty: true
+      - name: deploy-tools
+        image: dtzar/helm-kubectl:latest  # This image has both helm and kubectl
+        imagePullPolicy: IfNotPresent
+        command: ["tail", "-f", "/dev/null"]
+        tty: true
       - name: kaniko
         # 'debug' is required to keep the container alive
         image: gcr.io/kaniko-project/executor:debug
@@ -65,20 +70,19 @@ pipeline {
 
         stage('Deploy to K8s') {
             steps {
-                // We use the maven container here because it usually has 'sh'
-                // but you must ensure helm/kubectl are installed on your Jenkins agent
-                // OR add a third container to the Pod for helm
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                    export KUBECONFIG=$KUBECONFIG
-                    helm upgrade --install demo-app ./helm/demo-app \
-                      --namespace $K8S_NAMESPACE \
-                      --create-namespace \
-                      --set image.repository=$DOCKER_IMAGE \
-                      --set image.tag=$TAG
+                    container('deploy-tools') { // Run inside the container that has helm
+                        sh '''
+                        export KUBECONFIG=$KUBECONFIG
+                        helm upgrade --install demo-app ./helm/demo-app \
+                          --namespace $K8S_NAMESPACE \
+                          --create-namespace \
+                          --set image.repository=$DOCKER_IMAGE \
+                          --set image.tag=$TAG
 
-                    kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE --timeout=180s
-                    '''
+                        kubectl rollout status deployment/demo-app -n $K8S_NAMESPACE --timeout=180s
+                        '''
+                    }
                 }
             }
         }
